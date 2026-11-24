@@ -1,0 +1,62 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<script src="three.min.js"></script><script src="fflate.min.js"></script><script src="FBXLoader.js"></script>
+<script>
+// Pulls skinned-mesh data and animation tracks out of Rocketbox FBX files (run headless at build time).
+const load = (u) => new Promise((res, rej) => { const m = new THREE.LoadingManager(); m.setURLModifier((x) => /\.(tga|png|jpg)$/i.test(x) ? 'data:,' : x); new THREE.FBXLoader(m).load(u, res, undefined, rej); });
+const b64 = (ta) => { const u8 = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+// body bones the game animates; facial bones keep their rest pose
+const BODY = /^Bip01(_(Pelvis|Spine\d?|Neck|Head|[LR]_(Clavicle|UpperArm|Forearm|Hand|Thigh|Calf|Foot|Toe0|Finger\d+)))?$/;
+
+window.extractAvatar = async (url) => {
+  const obj = await load(url);
+  obj.updateMatrixWorld(true);
+  const meshes = [];
+  obj.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
+  if (meshes.length !== 1) throw new Error('expected one skinned mesh, got ' + meshes.length);
+  const mesh = meshes[0], g = mesh.geometry, sk = mesh.skeleton;
+  // the bone list: skeleton bones plus any ancestors outside it, parents always before children
+  const list = [];
+  const add = (b) => { if (list.includes(b)) return; if (b.parent && b.parent !== obj && b.parent.isBone) add(b.parent); list.push(b); };
+  sk.bones.forEach(add);
+  const inv = list.map((b) => { const i = sk.bones.indexOf(b); return i >= 0 ? sk.boneInverses[i] : new THREE.Matrix4().copy(b.matrixWorld).invert(); });
+  const skinMap = sk.bones.map((b) => list.indexOf(b));
+  const si = g.attributes.skinIndex.array, siOut = new Float32Array(si.length);
+  for (let i = 0; i < si.length; i++) siOut[i] = skinMap[si[i]];
+  return {
+    mats: (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map((m) => m.name),
+    groups: g.groups.map((x) => ({ start: x.start, count: x.count, mat: x.materialIndex })),
+    count: g.attributes.position.count, indexed: !!g.index,
+    pos: b64(new Float32Array(g.attributes.position.array)), nrm: b64(new Float32Array(g.attributes.normal.array)), uv: b64(new Float32Array(g.attributes.uv.array)),
+    si: b64(siOut), sw: b64(new Float32Array(g.attributes.skinWeight.array)), index: g.index ? b64(new Uint32Array(g.index.array)) : null,
+    bones: list.map((b) => ({ n: b.name, p: list.indexOf(b.parent), t: b.position.toArray(), q: b.quaternion.toArray(), s: b.scale.toArray() })),
+    inv: b64(new Float32Array(inv.flatMap((m) => m.elements))),
+    meshT: mesh.position.toArray(), meshQ: mesh.quaternion.toArray(), meshS: mesh.scale.toArray(), meshParentRoot: mesh.parent === obj,
+    bind: mesh.bindMatrix.toArray(),
+  };
+};
+
+window.extractClip = async (url, fps) => {
+  const obj = await load(url);
+  const raw = obj.animations[0];
+  const quats = raw.tracks.filter((t) => t.name.endsWith('.quaternion') && BODY.test(t.name.split('.')[0]));
+  const pos = raw.tracks.find((t) => t.name === 'Bip01.position');
+  const dur = raw.duration, frames = Math.max(1, Math.round(dur * fps)) + 1;
+  const out = new Float32Array(frames * quats.length * 4), rootY = new Float32Array(frames);
+  const q = new THREE.Quaternion(), tmp = new Float32Array(4);
+  for (let f = 0; f < frames; f++) {
+    const t = Math.min(dur, f / fps);
+    quats.forEach((tr, bi) => {
+      const it = tr.createInterpolant(); const v = it.evaluate(t);
+      q.set(v[0], v[1], v[2], v[3]).normalize();
+      // keep consecutive frames on the same hemisphere so slerp takes the short way
+      if (f > 0) { const o = ((f - 1) * quats.length + bi) * 4; if (q.x * out[o] + q.y * out[o + 1] + q.z * out[o + 2] + q.w * out[o + 3] < 0) { q.x = -q.x; q.y = -q.y; q.z = -q.z; q.w = -q.w; } }
+      out.set([q.x, q.y, q.z, q.w], (f * quats.length + bi) * 4);
+    });
+    if (pos) { const v = pos.createInterpolant().evaluate(t); rootY[f] = v[1]; }
+  }
+  let speed = 0;
+  if (pos) { const v = pos.values, n = v.length / 3; speed = Math.hypot(v[(n - 1) * 3] - v[0], v[(n - 1) * 3 + 2] - v[2]) / 100 / dur; }
+  return { bones: quats.map((t) => t.name.split('.')[0]), frames, fps, dur, speed, q: b64(out), y: b64(rootY) };
+};
+window.ready = true;
+</script></body></html>

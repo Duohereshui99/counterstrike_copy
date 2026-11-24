@@ -1,0 +1,7 @@
+# build output for embedding (kestrel.html is kept: it is the playable game)
+dist/
+node_modules/
+# raw Rocketbox downloads used by tools/avatars (about 700 MB)
+tools/avatars/.cache/
+*.log
+.DS_Store

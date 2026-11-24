@@ -1,0 +1,18 @@
+{
+  "name": "counterstrike_copy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "红隼行动（Operation Kestrel）：网页版单机警匪回合制射击游戏",
+  "scripts": {
+    "build": "node build.js",
+    "assets:fetch": "node tools/avatars/fetch.js",
+    "assets:convert": "node tools/avatars/convert.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "three": "0.128.0"
+  }
+}

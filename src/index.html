@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>红隼行动</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-bleed 3D canvas; old-school amber HUD glyphs in the corners; numbered text menus on the left edge */
+:root {
+  --ink: #0a0e11;
+  --panel: rgba(9, 13, 17, 0.64);
+  --panel-solid: #11181d;
+  --panel-hi: #1a242b;
+  --line: rgba(236, 228, 214, 0.15);
+  --text: #ece6da;
+  --muted: #98a2a7;
+  --amber: #f2a33a;
+  --amber-dim: rgba(242, 163, 58, 0.18);
+  --hud: #f4ad3f;
+  --hud-low: #ff4b3a;
+  --ally: #5ec4ff;
+  --enemy: #ff5b4a;
+  --ct: #6cb8ff;
+  --t: #ff6b57;
+  --money: #9ed86f;
+  --danger: #ff4b3a;
+  --cross: #7dffb0;
+  --font-hud: "Chakra Petch", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --sl: env(safe-area-inset-left, 0px);
+  --sr: env(safe-area-inset-right, 0px);
+  --st: env(safe-area-inset-top, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--ink); color: var(--text); font-family: var(--font-body); -webkit-user-select: none; user-select: none; touch-action: none; }
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.hidden { display: none !important; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+kbd { font-family: var(--font-hud); font-size: 12px; padding: 0 6px; border: 1px solid rgba(236,228,214,.35); border-bottom-width: 2px; border-radius: 3px; white-space: nowrap; }
+
+/* ---------- screen effects ---------- */
+.fxlayer { position: fixed; inset: 0; pointer-events: none; }
+#fx-flash { background: #fff; opacity: 0; }
+#fx-smoke { background: #a9aaa4; opacity: 0; }
+#fx-damage { opacity: 0; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(190, 20, 10, 0.55) 100%); }
+#fx-dead { opacity: 0; background: rgba(20, 0, 0, 0.35); transition: opacity .6s; }
+#scope { position: fixed; inset: 0; pointer-events: none; }
+#scope .lens { position: absolute; left: 50%; top: 50%; width: min(96vh, 96vw); height: min(96vh, 96vw); transform: translate(-50%, -50%); border-radius: 50%; box-shadow: 0 0 0 200vmax #000, inset 0 0 40px 18px rgba(0,0,0,.85); }
+#scope .h, #scope .v { position: absolute; background: #000; }
+#scope .h { left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-1px); }
+#scope .v { top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-1px); }
+
+/* ---------- classic HUD: bare amber glyphs, no panels ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--font-hud); color: var(--hud); text-shadow: 0 0 6px rgba(0,0,0,.75), 0 1px 2px rgba(0,0,0,.9); }
+.glyph { display: flex; align-items: center; gap: 8px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.glyph svg { fill: currentColor; filter: drop-shadow(0 1px 2px rgba(0,0,0,.8)); }
+#c-vitals { position: absolute; left: calc(18px + var(--sl)); bottom: calc(14px + var(--sb)); display: flex; gap: 26px; align-items: flex-end; }
+#c-hp, #c-ar { font-size: 38px; }
+#c-hp svg, #c-ar svg { width: 26px; height: 26px; opacity: .9; }
+#c-hp.low { color: var(--hud-low); }
+#c-helm { font-size: 12px; align-self: flex-start; opacity: .8; }
+#c-time { position: absolute; left: 50%; bottom: calc(14px + var(--sb)); transform: translateX(-50%); font-size: 32px; }
+#c-time svg { width: 22px; height: 22px; }
+#c-time.urgent { color: var(--hud-low); }
+#c-time .c4 { display: none; font-size: 15px; letter-spacing: .1em; padding: 2px 8px; border: 2px solid currentColor; }
+#c-time.bomb { color: var(--hud-low); animation: blink 1s steps(2) infinite; }
+#c-time.bomb .c4 { display: inline-block; }
+#c-time.bomb .tm, #c-time.bomb svg { display: none; }
+@keyframes blink { 50% { opacity: .3; } }
+#c-right { position: absolute; right: calc(20px + var(--sr)); bottom: calc(14px + var(--sb)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#c-money { font-size: 28px; transition: color .2s; }
+#c-money.gain { color: var(--money); }
+#c-money.spend { color: var(--hud-low); }
+#c-ammo { font-size: 38px; }
+#c-ammo .sep { opacity: .55; margin: 0 2px; font-size: 30px; }
+#c-ammo .res { font-size: 28px; opacity: .85; }
+#c-ammo svg { width: 14px; height: 30px; }
+#c-ammo.low .mag { color: var(--hud-low); }
+#c-ammo.single .sep, #c-ammo.single .res { display: none; }
+#c-mode { font-size: 12px; letter-spacing: .1em; opacity: .85; }
+#c-pop { position: absolute; right: calc(22px + var(--sr)); bottom: calc(128px + var(--sb)); font-size: 22px; font-weight: 700; color: var(--money); opacity: 0; transition: opacity .3s, transform .3s; }
+#c-pop.show { opacity: 1; transform: translateY(-6px); }
+#c-pop.neg { color: var(--hud-low); }
+#c-slots { position: absolute; right: calc(20px + var(--sr)); top: 34%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; opacity: 0; transition: opacity .25s; font-size: 14px; }
+#c-slots.show { opacity: 1; }
+#c-slots .s { padding: 3px 10px; background: rgba(0,0,0,.35); color: rgba(244,173,63,.6); border-right: 3px solid transparent; }
+#c-slots .s.on { color: var(--hud); border-color: var(--hud); background: rgba(0,0,0,.55); }
+#c-slots .s b { font-size: 11px; margin-left: 8px; opacity: .7; }
+
+#c-top { position: absolute; top: calc(10px + var(--st)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 15px; }
+#c-score { display: flex; align-items: center; gap: 10px; padding: 3px 12px; background: rgba(0,0,0,.35); font-weight: 700; }
+#c-score .ct { color: var(--ct); }
+#c-score .t { color: var(--t); }
+#c-score .n { font-size: 22px; min-width: 18px; text-align: center; }
+#c-score .mid { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .08em; }
+#c-host { display: flex; gap: 6px; font-size: 13px; }
+#c-host i { font-style: normal; width: 18px; height: 18px; display: grid; place-items: center; border: 1.5px solid currentColor; border-radius: 50%; font-size: 10px; }
+#c-host i.wait { color: #e8e2d6; }
+#c-host i.led { color: var(--hud); }
+#c-host i.safe { color: var(--money); }
+#c-host i.dead { color: var(--hud-low); }
+
+#radar { position: absolute; top: calc(12px + var(--st)); left: calc(12px + var(--sl)); width: 168px; height: 168px; border-radius: 50%; }
+#radar-site { position: absolute; top: calc(186px + var(--st)); left: calc(12px + var(--sl)); width: 168px; text-align: center; font-size: 13px; letter-spacing: .08em; }
+
+#chat { position: absolute; left: calc(14px + var(--sl)); bottom: calc(76px + var(--sb)); width: min(440px, 60vw); display: flex; flex-direction: column; gap: 3px; font-family: var(--font-body); font-size: 14px; color: var(--text); }
+#chat .ln { transition: opacity .5s; }
+#chat .ln .who { font-weight: 700; color: var(--ally); }
+#chat .ln .tag { color: var(--hud); font-size: 12px; margin-right: 4px; }
+
+#killfeed { position: absolute; top: calc(12px + var(--st)); right: calc(12px + var(--sr)); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+#killfeed .kf { display: flex; align-items: center; gap: 8px; padding: 3px 10px; background: rgba(0,0,0,.45); font-size: 14px; font-weight: 600; white-space: nowrap; transition: opacity .4s; text-shadow: none; }
+#killfeed .kf.mine { box-shadow: inset 0 0 0 1px var(--hud-low); }
+#killfeed .kf .w { color: #d8d2c6; font-weight: 500; font-size: 12px; }
+#killfeed .kf .hs { color: var(--hud); font-size: 12px; }
+.c-ally { color: var(--ally); }
+.c-enemy { color: var(--enemy); }
+.c-host { color: #e8e2d6; }
+
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#crosshair i { position: absolute; background: var(--cross); box-shadow: 0 0 0 1px rgba(0,0,0,.55); }
+#crosshair .ch-t, #crosshair .ch-b { width: 2px; height: 8px; left: -1px; }
+#crosshair .ch-l, #crosshair .ch-r { width: 8px; height: 2px; top: -1px; }
+#crosshair .ch-dot { width: 2px; height: 2px; left: -1px; top: -1px; }
+#hitmarker { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; opacity: 0; }
+#hitmarker::before, #hitmarker::after { content: ""; position: absolute; left: 10px; top: -2px; width: 2px; height: 26px; background: #fff; transform: rotate(45deg); box-shadow: 0 0 2px #000; clip-path: polygon(0 0, 100% 0, 100% 34%, 0 34%, 0 66%, 100% 66%, 100% 100%, 0 100%); }
+#hitmarker::after { transform: rotate(-45deg); }
+#hitmarker.head::before, #hitmarker.head::after { background: var(--danger); }
+#dmg-ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#dmg-ring .arc { position: absolute; left: -70px; top: -70px; width: 140px; height: 140px; border-radius: 50%; border: 5px solid transparent; border-top-color: rgba(255, 60, 40, 0.9); transition: opacity .9s; }
+
+#banner { position: absolute; left: 0; right: 0; top: 24%; text-align: center; opacity: 0; transition: opacity .35s; color: var(--text); }
+#banner.show { opacity: 1; }
+#banner .big { display: inline-block; padding: 8px 28px; font-size: clamp(22px, 4vw, 38px); font-weight: 700; letter-spacing: .06em; background: linear-gradient(90deg, transparent, rgba(8,12,15,.78) 18%, rgba(8,12,15,.78) 82%, transparent); }
+#banner .small { margin-top: 6px; font-size: 15px; color: #d0cabe; letter-spacing: .05em; }
+#banner.ct .big { color: var(--ct); }
+#banner.t .big { color: var(--t); }
+#banner.alert .big { color: var(--hud); }
+#notice { position: absolute; left: 50%; top: 70%; transform: translateX(-50%); font-family: var(--font-body); font-size: 15px; color: var(--text); opacity: 0; transition: opacity .25s; white-space: nowrap; }
+#notice.show { opacity: 1; }
+#hint { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); font-family: var(--font-body); font-size: 15px; color: var(--text); padding: 4px 14px; background: rgba(0,0,0,.45); opacity: 0; transition: opacity .25s; white-space: nowrap; }
+#hint.show { opacity: 1; }
+
+#progress { position: absolute; left: 50%; top: 66%; transform: translateX(-50%); width: min(320px, 70vw); text-align: center; }
+#progress .label { font-size: 14px; letter-spacing: .1em; margin-bottom: 4px; }
+#progress .track { height: 8px; background: rgba(0,0,0,.55); border: 1px solid rgba(244,173,63,.5); }
+#progress .fill { height: 100%; width: 0; background: var(--hud); }
+#bomb-carry { position: absolute; left: calc(18px + var(--sl)); bottom: calc(62px + var(--sb)); font-size: 13px; letter-spacing: .06em; }
+
+#spectate { position: absolute; left: 50%; bottom: calc(86px + var(--sb)); transform: translateX(-50%); padding: 6px 18px; background: rgba(0,0,0,.5); font-size: 15px; text-align: center; color: var(--text); font-family: var(--font-body); }
+#spectate small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+/* ---------- numbered text menus (buy, radio, team) ---------- */
+#tmenu { position: fixed; left: calc(18px + var(--sl)); top: max(calc(206px + var(--st)), calc(50% - 220px)); max-height: calc(100% - 220px - var(--st) - var(--sb)); overflow-y: auto; min-width: 270px; max-width: min(380px, 90vw); padding: 12px 14px 10px; background: rgba(6, 9, 11, 0.78); border-left: 3px solid var(--hud); font-family: var(--font-body); }
+#tmenu .tm-title { font-family: var(--font-hud); font-size: 15px; font-weight: 700; color: var(--hud); letter-spacing: .06em; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 14px; }
+#tmenu .tm-title .money { color: var(--money); }
+#tmenu .tm-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 6px; font-size: 15px; cursor: pointer; }
+#tmenu .tm-row:hover { background: rgba(244,173,63,.12); }
+#tmenu .tm-row b { font-family: var(--font-hud); color: var(--hud); min-width: 16px; }
+#tmenu .tm-row .lbl { flex: 1; min-width: 0; }
+#tmenu .tm-row .lbl small { display: block; font-size: 11px; color: var(--muted); }
+#tmenu .tm-row .rt { font-family: var(--font-hud); font-size: 14px; color: var(--money); }
+#tmenu .tm-row.no { opacity: .45; }
+#tmenu .tm-row.no .rt { color: var(--danger); }
+#tmenu .tm-row.own .rt { color: var(--ally); }
+#tmenu .tm-row.sep { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+#tmenu .tm-foot { margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+
+/* ---------- shop: click to buy (number keys still work) ---------- */
+#shop { position: fixed; inset: 0; z-index: 15; display: flex; align-items: center; justify-content: center; padding: calc(12px + var(--st)) max(12px, var(--sr)) calc(12px + var(--sb)) max(12px, var(--sl)); background: rgba(4, 7, 9, 0.38); }
+#shop .shop-card { width: min(1060px, 100%); max-height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: rgba(10, 14, 17, 0.94); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+.shop-head { display: flex; align-items: center; gap: 18px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.shop-head h2 { margin: 2px 0 0; font-size: 22px; }
+.shop-head .help { font-size: 12px; color: var(--muted); }
+#shop-time { font-size: 13px; color: var(--muted); }
+#shop-money { margin-left: auto; font-family: var(--font-hud); font-size: 26px; font-weight: 700; color: var(--money); }
+.shop-x { width: 38px; height: 38px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-size: 18px; }
+.shop-x:hover { border-color: var(--amber); }
+.shop-body { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 0; }
+#shop-cats { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-right: 1px solid var(--line); overflow-y: auto; }
+.shop-cat { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid transparent; background: rgba(255,255,255,.035); cursor: pointer; text-align: left; font-size: 15px; }
+.shop-cat b { font-family: var(--font-hud); color: var(--hud); min-width: 12px; }
+.shop-cat small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.shop-cat:hover { border-color: rgba(244,173,63,.5); }
+.shop-cat.on { background: var(--amber-dim); border-color: var(--amber); color: #fff; }
+#shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 10px; padding: 12px; overflow-y: auto; align-content: start; min-height: 0; }
+.shop-item { position: relative; display: grid; gap: 3px; padding: 10px; text-align: left; cursor: pointer; border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.015)); transition: border-color .12s, background .12s, transform .1s; }
+.shop-item:hover { border-color: var(--amber); background: rgba(244,173,63,.08); }
+.shop-item:active { transform: scale(.985); }
+.shop-item img { width: 100%; aspect-ratio: 200 / 84; object-fit: contain; display: block; }
+.shop-item .k { position: absolute; left: 9px; top: 7px; font-family: var(--font-hud); color: var(--hud); font-size: 13px; }
+.shop-item .k.dim { opacity: .35; }
+.shop-item .pr { position: absolute; right: 10px; top: 7px; font-family: var(--font-hud); font-weight: 700; font-size: 15px; color: var(--money); }
+.shop-item .nm { font-weight: 700; font-size: 14.5px; }
+.shop-item .sub { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.shop-item .bars { display: grid; gap: 3px; margin-top: 4px; }
+.shop-item .st { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.shop-item .st i { font-style: normal; }
+.shop-item .st em { display: block; height: 4px; background: rgba(255,255,255,.09); }
+.shop-item .st u { display: block; height: 100%; background: var(--hud); }
+.shop-item.poor { opacity: .5; }
+.shop-item.poor .pr { color: var(--danger); }
+.shop-item.own { border-color: rgba(94,196,255,.55); }
+.shop-item.own .pr { color: var(--ally); }
+.shop-item.got { box-shadow: inset 0 0 0 2px var(--money); }
+#shop-status { min-height: 20px; padding: 4px 16px 0; font-size: 13px; color: var(--hud); }
+.shop-foot { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; padding: 8px 12px 12px; align-items: center; }
+#shop-ammo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.shop-ammo-btn { display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left; cursor: pointer; border: 1px solid var(--line); background: rgba(255,255,255,.04); min-width: 0; }
+.shop-ammo-btn:hover { border-color: var(--amber); }
+.shop-ammo-btn b { font-family: var(--font-hud); color: var(--hud); }
+.shop-ammo-btn span { flex: 1; min-width: 0; font-size: 14px; }
+.shop-ammo-btn small { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shop-ammo-btn em { font-style: normal; font-family: var(--font-hud); color: var(--money); }
+.shop-ammo-btn.poor { opacity: .5; }
+#shop-load { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+#shop-load i { font-style: normal; color: var(--muted); font-size: 12px; margin-right: 6px; }
+body.shopopen #touch { display: none; }
+body.touch .shop-x { width: 46px; height: 46px; font-size: 20px; }
+@media (max-height: 560px), (max-width: 760px) {
+  #shop { padding: calc(4px + var(--st)) max(4px, var(--sr)) calc(4px + var(--sb)) max(4px, var(--sl)); }
+  .shop-head { padding: 6px 10px; gap: 10px; }
+  .shop-head .eyebrow, .shop-head .help { display: none; }
+  .shop-head h2 { font-size: 17px; }
+  #shop-money { font-size: 20px; }
+  .shop-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  #shop-cats { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  .shop-cat { padding: 6px 10px; white-space: nowrap; font-size: 14px; }
+  #shop-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; padding: 8px; }
+  .shop-item { padding: 6px 8px; }
+  .shop-item .bars, .shop-item .sub { display: none; }
+  .shop-foot { grid-template-columns: minmax(0, 1fr); padding: 4px 8px 8px; }
+  #shop-load { display: none; }
+}
+
+/* ---------- shared overlays ---------- */
+.overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: calc(16px + var(--st)) max(16px, var(--sr)) calc(16px + var(--sb)) max(16px, var(--sl)); }
+.card { background: rgba(12, 17, 21, 0.92); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.eyebrow { font-family: var(--font-hud); font-size: 12px; letter-spacing: .22em; color: var(--amber); text-transform: uppercase; }
+.btn { cursor: pointer; border: 1px solid var(--line); background: var(--panel-hi); padding: 10px 18px; font-family: var(--font-hud); font-weight: 600; letter-spacing: .06em; transition: background .15s, border-color .15s; }
+.btn:hover { border-color: var(--amber); }
+.btn.primary { background: var(--amber); color: #1a1206; border-color: var(--amber); font-size: 18px; padding: 12px 26px; }
+.btn.primary:hover { background: #ffb653; }
+
+/* ---------- main menu ---------- */
+#menu { justify-content: flex-start; background: linear-gradient(90deg, rgba(8,11,14,.94) 0%, rgba(8,11,14,.82) 42%, rgba(8,11,14,.15) 100%); overflow-y: auto; align-items: flex-start; }
+#menu .wrap { width: min(1000px, 100%); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 36px; margin: auto 0; padding-left: max(0px, 4vw); }
+.title-zh { font-size: clamp(44px, 7vw, 76px); font-weight: 700; line-height: 1.02; letter-spacing: .04em; margin: 4px 0 6px; text-wrap: balance; }
+.title-zh span { color: var(--amber); }
+.tagline { color: var(--muted); font-size: 15px; max-width: 34em; line-height: 1.7; }
+.opts { display: grid; gap: 14px; margin-top: 24px; }
+.opt { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 12px; }
+.opt > label, .opt > .lbl { font-size: 13px; color: var(--muted); letter-spacing: .08em; }
+.seg { display: flex; flex-wrap: wrap; gap: 0; }
+.seg button { cursor: pointer; border: 1px solid var(--line); background: transparent; padding: 7px 14px; margin-right: -1px; font-size: 14px; }
+.seg button.on { background: var(--amber-dim); border-color: var(--amber); color: #fff; position: relative; z-index: 1; }
+.seg button small { display: block; font-size: 11px; color: var(--muted); }
+.opt input[type=range] { width: 100%; accent-color: var(--amber); }
+.start-row { margin-top: 24px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.start-row .note { font-size: 12px; color: var(--muted); }
+.brief { padding: 18px 20px; align-self: center; }
+.brief h3 { margin: 6px 0 12px; font-size: 18px; }
+.keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px; font-size: 13.5px; }
+.keys kbd { justify-self: start; }
+.rules { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); line-height: 1.75; }
+.rules b { color: var(--text); font-weight: 500; }
+.credits { margin-top: 10px; font-size: 12px; color: var(--muted); }
+.credits summary { cursor: pointer; }
+.credits p { margin: 6px 0; }
+.credits pre { max-height: 140px; overflow: auto; white-space: pre-wrap; font-size: 10.5px; line-height: 1.45; background: rgba(0,0,0,.25); padding: 8px; margin: 0; }
+.menu-credit { margin-top: 14px; font-size: 11px; color: var(--muted); opacity: .8; }
+
+/* ---------- team & outfit select ---------- */
+#teamsel, #skinsel { background: rgba(5, 8, 10, 0.86); z-index: 20; flex-direction: column; gap: 18px; justify-content: flex-start; overflow-y: auto; }
+/* centred when it fits, scrolls from the top when the screen is too short */
+#teamsel > :first-child, #skinsel > :first-child { margin-top: auto; }
+#teamsel > :last-child, #skinsel > :last-child { margin-bottom: auto; }
+.sel-title { text-align: center; }
+.sel-title h2 { margin: 6px 0 4px; font-size: 28px; }
+.sel-title p { margin: 0; color: var(--muted); font-size: 14px; }
+.team-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 300px)); gap: 18px; max-width: 100%; }
+.team-card { cursor: pointer; text-align: left; padding: 18px 20px; border: 1px solid var(--line); background: var(--panel-hi); display: grid; gap: 6px; }
+.team-card:hover { border-color: currentColor; }
+.team-card.t { color: var(--t); }
+.team-card.ct { color: var(--ct); }
+.team-card .k { font-family: var(--font-hud); font-size: 13px; opacity: .8; }
+.team-card .nm { font-size: 24px; font-weight: 700; }
+.team-card .who { font-size: 14px; color: var(--text); }
+.team-card .role { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.sel-foot { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.skin-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 170px)); gap: 14px; max-width: 100%; }
+.skin-card { cursor: pointer; padding: 10px; border: 1px solid var(--line); background: var(--panel-hi); display: grid; gap: 4px; text-align: left; }
+.skin-card:hover { border-color: var(--amber); }
+.skin-card img { width: 100%; aspect-ratio: 16 / 22; object-fit: cover; object-position: 50% 0; background: linear-gradient(180deg, #2a3138, #151a1e); display: block; }
+.skin-card .k { font-family: var(--font-hud); font-size: 12px; color: var(--amber); }
+.skin-card .nm { font-size: 16px; font-weight: 700; }
+.skin-card .ds { font-size: 12px; color: var(--muted); }
+
+/* ---------- scoreboard ---------- */
+#scoreboard { pointer-events: none; }
+#scoreboard .card { width: min(760px, 100%); padding: 16px 18px; }
+.sb-team { margin-bottom: 12px; }
+.sb-title { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 4px; border-bottom: 2px solid currentColor; font-family: var(--font-hud); font-weight: 700; font-size: 18px; }
+.sb-title small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.sb-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; table-layout: fixed; }
+.sb-table th:first-child { width: 44%; }
+.sb-table td:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-table th { text-align: right; font-weight: 500; font-size: 11px; color: var(--muted); padding: 4px 6px; letter-spacing: .08em; }
+.sb-table th:first-child, .sb-table td:first-child { text-align: left; }
+.sb-table td { text-align: right; padding: 4px 6px; border-bottom: 1px solid rgba(236,228,214,.06); }
+.sb-table tr.me td { background: var(--amber-dim); }
+.sb-table tr.dead td { opacity: .45; }
+.sb-rounds { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 6px; }
+.sb-rounds i { width: 14px; height: 14px; font-style: normal; font-size: 9px; display: grid; place-items: center; font-family: var(--font-hud); color: #0a0e11; }
+
+/* ---------- pause / match over ---------- */
+#pause, #matchover { background: rgba(6, 9, 11, 0.72); }
+#pause .card, #matchover .card { width: min(480px, 100%); padding: 22px 24px; display: grid; gap: 14px; }
+#matchover .card { width: min(620px, 100%); }
+.result { font-size: 44px; font-weight: 700; letter-spacing: .08em; }
+.result.win { color: var(--ally); }
+.result.lose { color: var(--enemy); }
+.final { font-family: var(--font-hud); font-size: 26px; font-weight: 700; }
+.stat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.stat { padding: 8px 10px; background: var(--panel-hi); }
+.stat b { display: block; font-family: var(--font-hud); font-size: 24px; }
+.stat span { font-size: 12px; color: var(--muted); }
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+#clicklock { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 14px 26px; background: rgba(10,14,18,.86); border: 1px solid var(--amber); font-family: var(--font-hud); font-size: 18px; letter-spacing: .08em; cursor: pointer; }
+#nolock-tip { position: fixed; left: 50%; bottom: calc(10px + var(--sb)); transform: translateX(-50%); font-size: 12px; color: var(--muted); background: var(--panel); padding: 4px 12px; pointer-events: none; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--ink); font-family: var(--font-hud); letter-spacing: .3em; color: var(--muted); z-index: 50; }
+#loading.err { color: var(--danger); letter-spacing: .05em; padding: 24px; text-align: center; line-height: 1.8; }
+
+/* ---------- touch controls ---------- */
+#touch { position: fixed; inset: 0; pointer-events: none; }
+#touch .stick { position: absolute; left: calc(26px + var(--sl)); bottom: calc(26px + var(--sb)); width: 136px; height: 136px; border-radius: 50%; border: 2px solid rgba(236,228,214,.25); background: rgba(10,14,18,.25); pointer-events: auto; }
+#touch .stick i { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(236,228,214,.35); }
+#touch .tb { position: absolute; pointer-events: auto; width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(236,228,214,.3); background: rgba(10,14,18,.4); font-family: var(--font-hud); font-size: 13px; display: grid; place-items: center; color: var(--text); }
+#touch .tb.fire { width: 82px; height: 82px; right: calc(28px + var(--sr)); bottom: calc(120px + var(--sb)); border-color: var(--amber); color: var(--amber); font-size: 15px; }
+#touch .tb.on { background: rgba(242, 163, 58, .35); }
+#touch-look { position: fixed; top: 0; bottom: 0; right: 0; width: 55%; pointer-events: auto; }
+#rotate-tip { position: fixed; inset: 0; z-index: 40; display: none; place-items: center; text-align: center; padding: 24px; background: var(--ink); font-size: 18px; line-height: 1.8; }
+#rotate-tip b { display: block; font-family: var(--font-hud); color: var(--amber); font-size: 14px; letter-spacing: .2em; }
+
+@media (max-width: 760px) {
+  #menu .wrap { grid-template-columns: minmax(0, 1fr); gap: 18px; padding-left: 0; }
+  #menu { background: rgba(8,11,14,.9); }
+  .brief { display: none; }
+  .team-cards { grid-template-columns: minmax(0, 1fr); }
+  .skin-cards { grid-template-columns: repeat(2, minmax(0, 150px)); }
+  #radar { width: 118px; height: 118px; }
+  #radar-site { top: calc(134px + var(--st)); width: 118px; }
+  #c-hp, #c-ar, #c-ammo { font-size: 28px; }
+  #killfeed .kf { font-size: 12px; }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* touch: HUD numbers move inward so they clear the stick and buttons */
+body.touch .brief { display: none; }
+body.touch #menu .wrap { grid-template-columns: minmax(0, 1fr); }
+body.touch #radar { width: 120px; height: 120px; }
+body.touch #radar-site { top: calc(136px + var(--st)); width: 120px; }
+body.touch #c-vitals { left: 50%; transform: translateX(-50%); bottom: calc(8px + var(--sb)); gap: 16px; }
+body.touch #c-hp, body.touch #c-ar { font-size: 24px; }
+body.touch #c-hp svg, body.touch #c-ar svg { width: 18px; height: 18px; }
+body.touch #c-time { bottom: auto; top: calc(64px + var(--st)); font-size: 22px; }
+body.touch #c-right { right: auto; left: 50%; transform: translateX(-50%); bottom: calc(40px + var(--sb)); flex-direction: row; gap: 16px; align-items: center; }
+body.touch #c-ammo { font-size: 24px; }
+body.touch #c-ammo .res { font-size: 18px; }
+body.touch #c-money { font-size: 18px; }
+body.touch #c-mode, body.touch #c-slots { display: none; }
+body.touch #c-pop { right: auto; left: calc(50% + 70px); bottom: calc(76px + var(--sb)); }
+body.touch #chat { bottom: auto; top: calc(8px + var(--st)); left: calc(142px + var(--sl)); width: min(176px, calc(50vw - 240px)); font-size: 11.5px; gap: 2px; }
+body.touch #chat .ln .tag { display: none; }
+body.touch.menuopen #chat { display: none; }
+body.touch #killfeed { top: calc(58px + var(--st)); }
+body.touch #hint { top: 54%; font-size: 13px; }
+body.touch #bomb-carry { left: 50%; transform: translateX(-50%); bottom: calc(76px + var(--sb)); white-space: nowrap; }
+body.touch #spectate { bottom: calc(150px + var(--sb)); }
+body.touch #tmenu { top: calc(8px + var(--st)); left: calc(142px + var(--sl)); transform: none; max-height: calc(100% - 16px - var(--st) - var(--sb)); overflow-y: auto; padding: 8px 12px; }
+body.touch #tmenu .tm-row { padding: 7px 6px; font-size: 14px; }
+body.touch #tmenu .tm-row .lbl small { display: none; }
+body.menuopen #touch .tb:not(#t-buy):not(#t-radio), body.menuopen #touch-look, body.menuopen #touch .stick { display: none; }
+@media (orientation: portrait) { body.touch #rotate-tip { display: grid; } }
+@media (max-height: 520px) {
+  .title-zh { font-size: 40px; }
+  .tagline { font-size: 13px; line-height: 1.6; }
+  .opts { gap: 8px; margin-top: 14px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); column-gap: 24px; }
+  .opt { grid-template-columns: 78px minmax(0, 1fr); }
+  .seg button { padding: 6px 11px; }
+  .start-row { margin-top: 14px; }
+  #menu .brief { display: none; }
+  #menu .wrap { grid-template-columns: minmax(0, 1fr); }
+  .skin-card img { aspect-ratio: 1 / 1; }
+  .sel-title .eyebrow { display: none; }
+  .sel-title h2 { font-size: 22px; margin: 0 0 2px; }
+  #teamsel, #skinsel { gap: 12px; }
+  .team-card { padding: 12px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #c-time.bomb { animation: none; }
+  #banner, #hint, #c-pop, #notice { transition: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0"></canvas>
+<div id="fx-smoke" class="fxlayer"></div>
+<div id="fx-damage" class="fxlayer"></div>
+<div id="fx-dead" class="fxlayer"></div>
+<div id="scope" class="hidden"><div class="lens"></div><div class="h"></div><div class="v"></div></div>
+
+<div id="hud" class="hidden">
+  <canvas id="radar" width="168" height="168"></canvas>
+  <div id="radar-site"></div>
+  <div id="c-top">
+    <div id="c-score"><span class="ct">警</span><span class="n ct" id="sc-ct">0</span><span class="mid" id="sc-mid">第 1 回合</span><span class="n t" id="sc-t">0</span><span class="t">匪</span></div>
+    <div id="c-host" class="hidden"></div>
+  </div>
+  <div id="killfeed"></div>
+  <div id="chat"></div>
+  <div id="crosshair"><i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-dot"></i></div>
+  <div id="hitmarker"></div>
+  <div id="dmg-ring"></div>
+  <div id="banner"><div class="big" id="banner-big"></div><div class="small" id="banner-small"></div></div>
+  <div id="hint"></div>
+  <div id="notice"></div>
+  <div id="progress" class="hidden"><div class="label" id="progress-label">安放中</div><div class="track"><div class="fill" id="progress-fill"></div></div></div>
+  <div id="bomb-carry" class="hidden">● 你携带着炸弹 · 在 A / B 包点按住 E 安放</div>
+  <div id="c-vitals">
+    <div class="glyph" id="c-hp"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 1h6v6h6v6h-6v6H7v-6H1V7h6z"/></svg><span id="hp">100</span></div>
+    <div class="glyph" id="c-ar"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1l8 3v6c0 4.6-3.4 8.2-8 9-4.6-.8-8-4.4-8-9V4z"/></svg><span id="armor">0</span><span id="c-helm" class="hidden">盔</span></div>
+  </div>
+  <div class="glyph" id="c-time"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 2.2a6.8 6.8 0 1 1 0 13.6 6.8 6.8 0 0 1 0-13.6zM9 5v6l5 3 1-1.6-4-2.4V5z"/></svg><span class="tm" id="timer">2:30</span><span class="c4">C4</span></div>
+  <div id="c-pop"></div>
+  <div id="c-slots"></div>
+  <div id="c-right">
+    <div class="glyph" id="c-money">$ <span id="money">800</span></div>
+    <div class="glyph" id="c-ammo"><span class="mag" id="mag">12</span><span class="sep">|</span><span class="res" id="reserve">24</span><svg viewBox="0 0 10 24" aria-hidden="true"><path d="M3 9h4v14H3zM5 1c1.6 2 2 4 2 7H3c0-3 .4-5 2-7z"/></svg></div>
+    <div id="c-mode"></div>
+  </div>
+  <div id="spectate" class="hidden"></div>
+</div>
+<div id="fx-flash" class="fxlayer"></div>
+
+<div id="tmenu" class="hidden" role="menu"></div>
+<div id="shop" class="hidden" role="dialog" aria-label="商店">
+  <div class="shop-card">
+    <div class="shop-head">
+      <div><div class="eyebrow">Armory</div><h2>商店</h2></div>
+      <div><div id="shop-time"></div><div class="help">鼠标点击购买 · 数字键也能选 · B / Esc 关闭</div></div>
+      <span id="shop-money">$800</span>
+      <button type="button" class="shop-x" data-act="close" aria-label="关闭商店">✕</button>
+    </div>
+    <div class="shop-body"><div id="shop-cats"></div><div id="shop-grid"></div></div>
+    <div id="shop-status" aria-live="polite"></div>
+    <div class="shop-foot"><div id="shop-ammo"></div><div id="shop-load"></div></div>
+  </div>
+</div>
+<div id="scoreboard" class="overlay hidden"><div class="card" id="sb-card"></div></div>
+
+<div id="menu" class="overlay">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow">Operation Kestrel · 单机对战</div>
+      <div class="title-zh">红隼<span>行动</span></div>
+      <div class="tagline">警匪对抗的老式回合制射击。选一边，跟电脑队友一起打：爆破图里匪方要炸掉包点，警方要守住或拆弹；人质图里警方要把人质带出去，匪方要看住他们。每回合用赚来的钱买枪、买甲、买子弹。</div>
+      <div class="opts">
+        <div class="opt"><div class="lbl">模式</div><div class="seg" data-opt="mode"><button data-v="bomb">爆破模式<small>安放 / 拆除炸弹</small></button><button data-v="hostage">人质营救<small>警方营救 4 名人质</small></button></div></div>
+        <div class="opt"><div class="lbl">电脑难度</div><div class="seg" data-opt="difficulty"><button data-v="easy">新兵</button><button data-v="normal">老兵</button><button data-v="hard">精英</button></div></div>
+        <div class="opt"><div class="lbl">每队人数</div><div class="seg" data-opt="teamSize"><button data-v="3">3 人</button><button data-v="5">5 人</button><button data-v="8">8 人</button></div></div>
+        <div class="opt"><div class="lbl">胜负</div><div class="seg" data-opt="rounds"><button data-v="0">不限回合</button><button data-v="8">先胜 8 局</button><button data-v="16">先胜 16 局</button></div></div>
+        <div class="opt"><div class="lbl">画质</div><div class="seg" data-opt="quality"><button data-v="high">高（阴影）</button><button data-v="low">流畅</button></div></div>
+        <div class="opt"><label for="opt-sens">鼠标灵敏度</label><input id="opt-sens" type="range" min="0.2" max="3" step="0.05"></div>
+        <div class="opt"><label for="opt-vol">音量</label><input id="opt-vol" type="range" min="0" max="1" step="0.05"></div>
+      </div>
+      <div class="start-row"><button class="btn primary" id="btn-start">开始游戏</button><button class="btn" id="btn-fs" type="button">全屏</button><span class="note" id="start-note">下一步选择阵营和人物</span></div>
+      <div class="menu-credit">人物模型：Microsoft Rocketbox（MIT 许可）</div>
+    </div>
+    <div class="card brief">
+      <div class="eyebrow">Field Manual</div>
+      <h3>操作</h3>
+      <div class="keys">
+        <kbd>W A S D</kbd><span>移动 · <kbd>Shift</kbd> 静步 · <kbd>Ctrl</kbd> 蹲下</span>
+        <kbd>空格</kbd><span>跳跃（可以跳上木箱）</span>
+        <kbd>鼠标</kbd><span>左键开火 · 右键：开镜 / 装卸消音器 / 三连发 / 防爆盾</span>
+        <kbd>1 2 3 4 5</kbd><span>主武器 · 手枪 · 匕首 · 投掷物 · 炸弹</span>
+        <kbd>R</kbd><span>换弹 · <kbd>Q</kbd> 上一把 · <kbd>G</kbd> 丢弃</span>
+        <kbd>E</kbd><span>安放 / 拆除炸弹 · 带走人质 · 捡枪</span>
+        <kbd>B</kbd><span>打开商店，用鼠标点击购买；子弹按 6 / 7 或 <kbd>,</kbd> <kbd>.</kbd></span>
+        <kbd>Z X C</kbd><span>无线电：跟我来、守住、冲……</span>
+        <kbd>M</kbd><span>更换阵营 · <kbd>Tab</kbd> 计分板</span>
+      </div>
+      <div class="rules">新买的枪只有一个弹匣，<b>记得买子弹</b>。防爆盾只有警方能买，配手枪用，右键在挡子弹和开火之间切换。击杀奖励 $300，误杀人质扣 $1500。</div>
+      <details class="credits"><summary>致谢与许可</summary><p>人物模型与动作捕捉数据来自 Microsoft Rocketbox Avatar Library，按 MIT 许可使用。</p><pre><!--ROCKETBOX_LICENSE--></pre></details>
+    </div>
+  </div>
+</div>
+
+<div id="teamsel" class="overlay hidden">
+  <div class="sel-title"><div class="eyebrow">Choose a side</div><h2>选择阵营</h2><p id="teamsel-mode">爆破模式</p></div>
+  <div class="team-cards">
+    <button class="team-card t" type="button" data-team="1"><span class="k">按 1</span><span class="nm">匪方</span><span class="who">毒蝰武装</span><span class="role" id="role-t"></span></button>
+    <button class="team-card ct" type="button" data-team="0"><span class="k">按 2</span><span class="nm">警方</span><span class="who">红隼特勤队</span><span class="role" id="role-ct"></span></button>
+  </div>
+  <div class="sel-foot"><button class="btn" type="button" id="team-auto">5 · 自动分配</button><button class="btn" type="button" id="team-back">返回</button></div>
+</div>
+
+<div id="skinsel" class="overlay hidden">
+  <div class="sel-title"><div class="eyebrow">Choose an outfit</div><h2>选择人物</h2><p id="skinsel-team">警方 · 红隼特勤队</p></div>
+  <div class="skin-cards" id="skin-cards"></div>
+  <div class="sel-foot"><button class="btn" type="button" id="skin-auto">5 · 随机</button><button class="btn" type="button" id="skin-back">返回</button></div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="card">
+    <div class="eyebrow">Paused</div>
+    <div style="font-size:26px;font-weight:700">已暂停</div>
+    <div class="opt"><label for="p-sens">鼠标灵敏度</label><input id="p-sens" type="range" min="0.2" max="3" step="0.05"></div>
+    <div class="opt"><label for="p-vol">音量</label><input id="p-vol" type="range" min="0" max="1" step="0.05"></div>
+    <div class="btn-row"><button class="btn primary" id="btn-resume">继续</button><button class="btn" id="btn-team">更换阵营</button><button class="btn" id="btn-restart">重新开始</button><button class="btn" id="btn-quit">返回主菜单</button></div>
+  </div>
+</div>
+
+<div id="matchover" class="overlay hidden">
+  <div class="card">
+    <div class="eyebrow">Mission Report</div>
+    <div class="result" id="mo-result">胜利</div>
+    <div class="final" id="mo-score">8 : 5</div>
+    <div class="stat-row" id="mo-stats"></div>
+    <div class="btn-row"><button class="btn primary" id="btn-again">再来一局</button><button class="btn" id="btn-menu">返回主菜单</button></div>
+  </div>
+</div>
+
+<div id="clicklock" class="hidden">点击屏幕继续</div>
+<div id="nolock-tip" class="hidden">当前窗口不支持锁定鼠标：把光标移到屏幕边缘可持续转向，方向键也能转向。在新标签页全屏打开效果最好。</div>
+
+<div id="touch" class="hidden">
+  <div id="touch-look"></div>
+  <div class="stick" id="t-stick"><i id="t-knob"></i></div>
+  <button class="tb fire" id="t-fire">开火</button>
+  <button class="tb" id="t-jump" style="right:calc(126px + var(--sr));bottom:calc(36px + var(--sb))">跳</button>
+  <button class="tb" id="t-crouch" style="right:calc(196px + var(--sr));bottom:calc(36px + var(--sb))">蹲</button>
+  <button class="tb" id="t-reload" style="right:calc(36px + var(--sr));bottom:calc(36px + var(--sb))">换弹</button>
+  <button class="tb" id="t-scope" style="right:calc(126px + var(--sr));bottom:calc(150px + var(--sb))">右键</button>
+  <button class="tb" id="t-switch" style="right:calc(36px + var(--sr));bottom:calc(220px + var(--sb))">切枪</button>
+  <button class="tb" id="t-use" style="right:calc(126px + var(--sr));bottom:calc(228px + var(--sb))">E</button>
+  <button class="tb" id="t-buy" style="left:calc(26px + var(--sl));bottom:calc(178px + var(--sb))">购买</button>
+  <button class="tb" id="t-radio" style="left:calc(96px + var(--sl));bottom:calc(178px + var(--sb))">无线</button>
+  <button class="tb" id="t-menu" style="right:calc(12px + var(--sr));top:calc(8px + var(--st));width:44px;height:44px">II</button>
+  <button class="tb" id="t-score" style="right:calc(64px + var(--sr));top:calc(8px + var(--st));width:44px;height:44px;font-size:12px">战绩</button>
+</div>
+<div id="rotate-tip"><div><b>ROTATE</b>把手机横过来玩<br><small style="color:var(--muted)">横屏才能同时操作摇杆和按钮</small></div></div>
+
+<div id="loading">LOADING</div>
+
+<!--ASSETS-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/map.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/textures.js"></script>
+<script src="js/render.js"></script>
+<script src="js/models.js"></script>
+<script src="js/avatars.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/agents.js"></script>
+<script src="js/bots.js"></script>
+<script src="js/game.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
